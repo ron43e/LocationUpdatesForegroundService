@@ -97,6 +97,7 @@ public class LocationUpdatesService extends Service {
     private Handler mServiceHandler;
     // The current location.
     private Location mLocation;     // the current location
+    private Location bestLocation;  // best location found
     public static String lastServerResponse;
     public static Calendar runningSince;
     public Calendar stoppedOn;
@@ -104,7 +105,7 @@ public class LocationUpdatesService extends Service {
     public static final String NOTIFICATION = "com.google.android.gms.location.sample.locationupdatesforegroundservice";
     public static boolean isRunning = true;
     private long lastUpdate;    // time of previous update
-
+    private static final int TWO_MINUTES = 1000 * 60 * 2;
 
     public LocationUpdatesService() {
     }
@@ -190,8 +191,9 @@ public class LocationUpdatesService extends Service {
         mServiceHandler.removeCallbacksAndMessages(null);
     }
 
-    // Makes a request for location updates. Note that in this sample we merely log the
-    // {@link SecurityException}.
+    /** Makes a request for location updates. Note that in this sample we merely log the
+     * {@link SecurityException}.
+     */
     public void requestLocationUpdates() {
         Log.i(TAG, "Requesting location updates");
         Utils.setRequestingLocationUpdates(this, true);
@@ -204,8 +206,9 @@ public class LocationUpdatesService extends Service {
         }
     }
 
-    // Removes location updates. Note that in this sample we merely log the
-    // {@link SecurityException}.
+    /** Removes location updates. Note that in this sample we merely log the
+     * {@link SecurityException}.
+     */
     public void removeLocationUpdates() {
         Log.i(TAG, "Removing location updates");
         try {
@@ -218,7 +221,10 @@ public class LocationUpdatesService extends Service {
         }
     }
 
-    // Returns the {@link NotificationCompat} used as part of the foreground service.
+    /** Returns the {@link NotificationCompat} used as part of the foreground service.
+     *
+     * @return Notification
+     */
     private Notification getNotification() {
         Intent intent = new Intent(this, LocationUpdatesService.class);
         CharSequence text = Utils.getLocationText(mLocation);
@@ -244,6 +250,9 @@ public class LocationUpdatesService extends Service {
                 .setWhen(System.currentTimeMillis()).build();
     }
 
+    /** get the last location
+     *
+     */
     private void getLastLocation() {
         try {
             mFusedLocationClient.getLastLocation()
@@ -262,29 +271,36 @@ public class LocationUpdatesService extends Service {
         }
     }
 
+    /** there is a new location
+     *
+     * @param location is the new location
+     */
     private void onNewLocation(Location location) {
         Log.i(TAG, "New location: " + location);
         mLocation = location;
-        // Notify anyone listening for broadcasts about the new location.
-        Intent intent = new Intent(ACTION_BROADCAST);
-        intent.putExtra(EXTRA_LOCATION, location);
-        LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(intent);
+        // check to see if this location is the best one
+        if (isBetterLocation(location, bestLocation)) {
+            // Notify anyone listening for broadcasts about the new location.
+            Intent intent = new Intent(ACTION_BROADCAST);
+            intent.putExtra(EXTRA_LOCATION, location);
+            LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(intent);
 
-        // Update notification content if running as a foreground service.
-        if (serviceIsRunningInForeground(this)) {
-            mNotificationManager.notify(NOTIFICATION_ID, getNotification());
+            // Update notification content if running as a foreground service.
+            if (serviceIsRunningInForeground(this)) {
+                mNotificationManager.notify(NOTIFICATION_ID, getNotification());
+            }
+            // get current time
+            long currentTime = location.getTime();
+            // send location to website
+            new TrackerRequest().start(
+                    "lat=" + location.getLatitude()
+                            + "&lon=" + location.getLongitude()
+                            + "&t=" + location.getTime()
+                            + "&user=" + "Dee"
+                            + "&tme=" + ((currentTime - lastUpdate) / 1000)
+            );
+            lastUpdate = currentTime;
         }
-        // get current time
-        long currentTime = location.getTime();
-        // send location to website
-        new TrackerRequest().start(
-                "lat=" + location.getLatitude()
-                        + "&lon=" + location.getLongitude()
-                        + "&t=" + location.getTime()
-                        + "&user=" + "Dee"
-                        + "&tme=" + ((currentTime - lastUpdate) / 1000)
-        );
-        lastUpdate = currentTime;
     }
 
     // Sets the location request parameters.
@@ -295,8 +311,8 @@ public class LocationUpdatesService extends Service {
         mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
     }
 
-    // calculate time since a certain time
-    //
+    /** calculate time since a certain time
+    */
     public StringBuilder printDifference(long startDate, long endDate) {
         StringBuilder sb = new StringBuilder();
         Formatter formatter = new Formatter(sb, Locale.US);
@@ -325,8 +341,9 @@ public class LocationUpdatesService extends Service {
         return sb;
     }
 
-    // Class used for the client Binder.  Since this service runs in the same process as its
-    // clients, we don't need to deal with IPC.
+    /** Class used for the client Binder.  Since this service runs in the same process as its
+     *   clients, we don't need to deal with IPC.
+     */
     public class LocalBinder extends Binder {
         LocationUpdatesService getService() {
             return LocationUpdatesService.this;
@@ -348,6 +365,62 @@ public class LocationUpdatesService extends Service {
         return false;
     }
 
+    /** Determines whether one Location reading is better than the current Location fix
+     * @param location  The new Location that you want to evaluate
+     * @param currentBestLocation  The current Location fix, to which you want to compare the new one
+     * from: https://developer.android.com/guide/topics/location/strategies.html
+     */
+    protected boolean isBetterLocation(Location location, Location currentBestLocation) {
+        if (currentBestLocation == null) {
+            // A new location is always better than no location
+            return true;
+        }
+
+        // Check whether the new location fix is newer or older
+        long timeDelta = location.getTime() - currentBestLocation.getTime();
+        boolean isSignificantlyNewer = timeDelta > TWO_MINUTES;
+        boolean isSignificantlyOlder = timeDelta < -TWO_MINUTES;
+        boolean isNewer = timeDelta > 0;
+
+        // If it's been more than two minutes since the current location, use the new location
+        // because the user has likely moved
+        if (isSignificantlyNewer) {
+            return true;
+            // If the new location is more than two minutes older, it must be worse
+        } else if (isSignificantlyOlder) {
+            return false;
+        }
+
+        // Check whether the new location fix is more or less accurate
+        int accuracyDelta = (int) (location.getAccuracy() - currentBestLocation.getAccuracy());
+        boolean isLessAccurate = accuracyDelta > 0;
+        boolean isMoreAccurate = accuracyDelta < 0;
+        boolean isSignificantlyLessAccurate = accuracyDelta > 200;
+
+        // Check if the old and new location are from the same provider
+        boolean isFromSameProvider = isSameProvider(location.getProvider(),
+                currentBestLocation.getProvider());
+
+        // Determine location quality using a combination of timeliness and accuracy
+        if (isMoreAccurate) {
+            return true;
+        } else if (isNewer && !isLessAccurate) {
+            return true;
+        } else if (isNewer && !isSignificantlyLessAccurate && isFromSameProvider) {
+            return true;
+        }
+        return false;
+    }
+
+    /** Checks whether two providers are the same */
+    private boolean isSameProvider(String provider1, String provider2) {
+        if (provider1 == null) {
+            return provider2 == null;
+        }
+        return provider1.equals(provider2);
+    }
+
+    /** This is the tracker thread */
     private class TrackerRequest extends Thread {
         private final static String MY_TAG = "TrackerReq";
         private String params;
