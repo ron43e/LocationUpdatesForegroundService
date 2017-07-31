@@ -17,6 +17,7 @@
 package com.google.android.gms.location.sample.locationupdatesforegroundservice;
 
 import android.Manifest;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -45,6 +46,8 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
+
+import com.google.android.gms.location.GeofencingClient;
 
 /**
  * The only activity in this sample.
@@ -80,6 +83,8 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
 	private Button mRemoveLocationUpdatesButton;
 	private Context mContext;
 	SharedPreferences preferences;
+	private GeofencingClient mGeofencingClient;
+	private PendingIntent mGeofencePendingIntent;
 
 
 	// Monitors the state of the connection to the service.

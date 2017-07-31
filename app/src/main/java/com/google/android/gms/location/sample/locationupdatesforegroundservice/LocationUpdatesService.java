@@ -16,6 +16,7 @@
 
 package com.google.android.gms.location.sample.locationupdatesforegroundservice;
 
+import android.Manifest;
 import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -24,6 +25,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.location.Location;
 import android.os.Binder;
@@ -33,15 +35,21 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.Geofence;
+import com.google.android.gms.location.GeofencingClient;
+import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 
@@ -51,6 +59,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Formatter;
@@ -72,7 +81,7 @@ import javax.net.ssl.SSLHandshakeException;
  * continue. When the activity comes back to the foreground, the foreground service stops, and the
  * notification assocaited with that service is removed.
  */
-public class LocationUpdatesService extends Service {
+public class LocationUpdatesService extends Service implements OnCompleteListener {
   private static final String PACKAGE_NAME =
       "com.google.android.gms.location.sample.locationupdatesforegroundservice";
   private static final String TAG = LocationUpdatesService.class.getSimpleName();
@@ -115,7 +124,15 @@ public class LocationUpdatesService extends Service {
 	private static final float GEOFENCE_RADIUS = 500.0f; // in meters
 	private PendingIntent geoFencePendingIntent;
 	private final int GEOFENCE_REQ_CODE = 0;
+	private PendingIntent mGeofencePendingIntent;
+	private GeofencingClient mGeofencingClient;
 
+
+	private enum PendingGeofenceTask {
+		ADD, REMOVE, NONE
+	}
+	private PendingGeofenceTask mPendingGeofenceTask = PendingGeofenceTask.NONE;
+	private ArrayList<Geofence> mGeofenceList;
 
 
   public LocationUpdatesService() {
@@ -142,19 +159,25 @@ public class LocationUpdatesService extends Service {
 		// set up to be able to read preferences
 		preferences = PreferenceManager.getDefaultSharedPreferences(this);
 		user = preferences.getString("pref_user_id", "Unknown");
+		// Geofencing
+		// Initially set the PendingIntent used in addGeofences() and removeGeofences() to null.
+		mGeofencePendingIntent = null;
+		mGeofenceList = new ArrayList<>();		// Empty list for storing geofences.
+		createGeofence(new LatLng(34.8714237, -84.347302), 900);
+		mGeofencingClient = LocationServices.getGeofencingClient(this);
   }
 
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
     Log.i(TAG, "Service started");
-    boolean startedFromNotification = intent.getBooleanExtra(EXTRA_STARTED_FROM_NOTIFICATION,
-        false);
+    boolean startedFromNotification = intent.getBooleanExtra(EXTRA_STARTED_FROM_NOTIFICATION, false);
     // We got here because the user decided to remove location updates from the notification.
     if (startedFromNotification) {
       removeLocationUpdates();
       stopSelf();
     }
-    // Tells the system to not try to recreate the service after it has been killed.
+		performPendingGeofenceTask();
+		// Tells the system to not try to recreate the service after it has been killed.
     return START_NOT_STICKY;
   }
 
@@ -527,4 +550,150 @@ public class LocationUpdatesService extends Service {
       super.start();
     }
   }
+
+	/**
+	 *  GEOFENCING
+ 	 */
+
+	/**
+	 * This sample hard codes geofence data. A real app might dynamically create geofences based on
+	 * the user's location.
+	 */
+	// create a Geofence
+	private Geofence createGeofence(LatLng latLng, float radius) {
+		Log.d(TAG, "createGeofence");
+		return new Geofence.Builder()
+						.setRequestId(GEOFENCE_REQ_ID)
+						.setCircularRegion(latLng.latitude, latLng.longitude, radius)
+						.setExpirationDuration(GEO_DURATION)
+						.setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER
+										| Geofence.GEOFENCE_TRANSITION_EXIT)
+						.build();
+	}
+
+	/**
+	 * Performs the geofencing task that was pending until location permission was granted.
+	 */
+	private void performPendingGeofenceTask() {
+		if (mPendingGeofenceTask == PendingGeofenceTask.ADD) {
+			addGeofences();
+		} else if (mPendingGeofenceTask == PendingGeofenceTask.REMOVE) {
+			removeGeofences();
+		}
+	}
+
+	/**
+	 * Adds geofences. This method should be called after the user has granted the location
+	 * permission.
+	 */
+	@SuppressWarnings("MissingPermission")
+	private void addGeofences() {
+		if (!checkPermissions()) {
+//			showSnackbar(getString(R.string.insufficient_permissions));
+			return;
+		}
+		mGeofencingClient.addGeofences(getGeofencingRequest(), getGeofencePendingIntent())
+						.addOnCompleteListener(this);
+	}
+
+	/**
+	 * Removes geofences. This method should be called after the user has granted the location
+	 * permission.
+	 */
+	@SuppressWarnings("MissingPermission")
+	private void removeGeofences() {
+		if (!checkPermissions()) {
+//			showSnackbar(getString(R.string.insufficient_permissions));
+			return;
+		}
+		mGeofencingClient.removeGeofences(getGeofencePendingIntent()).addOnCompleteListener(this);
+	}
+
+	/**
+	 * Builds and returns a GeofencingRequest. Specifies the list of geofences to be monitored.
+	 * Also specifies how the geofence notifications are initially triggered.
+	 */
+	private GeofencingRequest getGeofencingRequest() {
+		GeofencingRequest.Builder builder = new GeofencingRequest.Builder();
+
+		// The INITIAL_TRIGGER_ENTER flag indicates that geofencing service should trigger a
+		// GEOFENCE_TRANSITION_ENTER notification when the geofence is added and if the device
+		// is already inside that geofence.
+		builder.setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER);
+
+		// Add the geofences to be monitored by geofencing service.
+		builder.addGeofences(mGeofenceList);
+
+		// Return a GeofencingRequest.
+		return builder.build();
+	}
+
+	/**
+	 * Gets a PendingIntent to send with the request to add or remove Geofences. Location Services
+	 * issues the Intent inside this PendingIntent whenever a geofence transition occurs for the
+	 * current list of geofences.
+	 *
+	 * @return A PendingIntent for the IntentService that handles geofence transitions.
+	 */
+	private PendingIntent getGeofencePendingIntent() {
+		// Reuse the PendingIntent if we already have it.
+		if (mGeofencePendingIntent != null) {
+			return mGeofencePendingIntent;
+		}
+		Intent intent = new Intent(this, GeofenceIntentService.class);
+		// We use FLAG_UPDATE_CURRENT so that we get the same pending intent back when calling
+		// addGeofences() and removeGeofences().
+		return PendingIntent.getService(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+	}
+
+	/**
+	 * Return the current state of the permissions needed.
+	 */
+	private boolean checkPermissions() {
+		int permissionState = ActivityCompat.checkSelfPermission(this,
+						Manifest.permission.ACCESS_FINE_LOCATION);
+		return permissionState == PackageManager.PERMISSION_GRANTED;
+	}
+
+	/**
+	 * Runs when the result of calling {@link #addGeofences()} and/or {@link #removeGeofences()}
+	 * is available.
+	 * @param task the resulting Task, containing either a result or error.
+	 */
+	@Override
+	public void onComplete(@NonNull Task task) {
+		mPendingGeofenceTask = PendingGeofenceTask.NONE;
+		if (task.isSuccessful()) {
+			updateGeofencesAdded(!getGeofencesAdded());
+			int messageId = getGeofencesAdded() ? R.string.geofences_added :
+							R.string.geofences_removed;
+			Toast.makeText(this, getString(messageId), Toast.LENGTH_SHORT).show();
+		} else {
+			// Get the status code for the error and log it using a user-friendly message.
+			String errorMessage = GeofenceErrorMessages.getErrorString(this, task.getException());
+			Log.w(TAG, errorMessage);
+		}
+	}
+
+	/**
+	 * Stores whether geofences were added ore removed in {@link SharedPreferences};
+	 *
+	 * @param added Whether geofences were added or removed.
+	 */
+	private void updateGeofencesAdded(boolean added) {
+		PreferenceManager.getDefaultSharedPreferences(this)
+						.edit()
+						.putBoolean("com.google.android.gms.location.sample.locationupdatesforegroundservic.GEOFENCES_ADDED_KEY", added)
+						.apply();
+	}
+
+	/**
+	 * Returns true if geofences were added, otherwise false.
+	 */
+	private boolean getGeofencesAdded() {
+		return PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
+						"com.google.android.gms.location.sample.locationupdatesforegroundservic.GEOFENCES_ADDED_KEY", false);
+	}
+
+
 }

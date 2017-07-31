@@ -42,9 +42,9 @@
             android:enabled="true"
             android:exported="true" />
 
-        <service android:name=".GeofenceTrasitionService"
-                 android:enabled="true"
-                 android:exported="true" />
+        <!--<service android:name=".GeofenceTrasitionsIntentService"-->
+                 <!--android:enabled="true"-->
+                 <!--android:exported="true" />-->
 
         <meta-data android:name="com.google.android.geo.API_KEY"
                    android:value="AIzaSyBCKNjXYU-9-TBhndP6bVCkwfqvxjE9mW0"/>
