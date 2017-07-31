@@ -23,10 +23,18 @@
         functionality.</string>
     <string name="settings">Settings</string>
     <string name="ok">OK</string>
-    <string name="request_location_updates">Request location updates</string>
-    <string name="remove_location_updates">Remove location updates</string>
+    <string name="request_location_updates">Turn Tracker On</string>
+    <string name="remove_location_updates">Turn Tracker Off</string>
+    <string name="invalid_number">Invalid number</string>
+    <string name="toast_prefs_restart">Don\'t forget to restart tracking!</string>
+    <string name="hint_url">http(s)://server/path</string>
 
     <string name="location_updated">Location Updated: %1$s</string>
+
+    <string name="text_legend_url_0">Send GPS coordinates to :</string>
+    <string name="text_legend_url_1">Example: http://herverenault.fr/gps</string>
+    <string name="text_legend_url_2">Latitude and longitude added automatically</string>
+    <string name="text_legend_url_3">as in http://herverenault.fr/gps?lat=…&amp;lon=…</string>
 
     <string name="action_sign_in_short">Register</string>
     <string name="action_settings">Settings</string>
@@ -52,5 +60,23 @@
     <string name="text_stopped_on">Stopped on</string>
     <string name="text_killed">Android killed the application</string>
     <string name="waiting_for_gps_data">Waiting for GPS data</string>
+
+    <string name="pref_gps_updates">GPS Updates (seconds)</string>
+    <string name="pref_gps_updates_summary">Update GPS position approximately every… (5 seconds minimum)</string>
+    <string name="pref_gps_updates_too_low">Sorry, this value is too low.</string>
+    <string name="pref_gps_updates_too_high">Sorry, this value is greater than max run time.</string>
+    <string name="pref_gps_updates_battery_drain">Watch out! Values below 30s can drain your battery.</string>
+    <string name="pref_max_run_time">Max run time (hours)</string>
+    <string name="pref_max_run_time_summary">(defaults to 8 hours)</string>
+    <string name="pref_max_run_time_too_low">Sorry, this value is lower than GPS updates.</string>
+    <string name="pref_timestamp">Timestamp on each request</string>
+    <string name="pref_timestamp_summary">Add t=(milliseconds) to the parameters</string>
+    <string name="pref_gps_awake">Keep GPS awake</string>
+    <string name="pref_gps_awake_explain">More accurate but uses more power</string>
+    <string name="pref_geofence">Turn on GeoFence</string>
+    <string name="pref_geofence_explain">Geofence around cabin</string>
+    <string name="pref_user_name">User name</string>
+    <string name="pref_user_name_summary">Enter the name of the user</string>
+
 
 </resources>
